@@ -19,10 +19,12 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # style transfer for head portraits variant
 use_gain_maps = True
 
-def gain_map(content, style, eps=1e-04, g_min=0.72, g_max=5.0):
+def gain_map(content, style, eps=1e-04, g_min=0.7, g_max=5.0):
     G = style / (content + eps)
     return torch.clamp(G, g_min, g_max)
 
+
+# allows the extraction of feature maps in the forward pass
 class Hook(nn.Module):
     features = None
 
@@ -52,9 +54,11 @@ class Net(nn.Module):
     std  = torch.tensor([0.229, 0.224, 0.225]).to(device)
     normalization_layer = Normalization(mean, std).to(device)
 
+    # a pretrained (on ImageNet) vgg19 classifier is used for feature extraction
     vgg = models.vgg19(pretrained=True).features.to(device).eval()
 
-    # remove the deeper, unused layers from the network
+    # remove the deeper, unused layers from the network to avoid having to
+    # perform the complete forward pass
     def trim(self, vgg, last_layer):
         model = nn.Sequential(Net.normalization_layer)
 
@@ -88,10 +92,12 @@ class Net(nn.Module):
         self.content_features = [h.features for h in self.content_hook]
         self.style_features = [h.features for h in self.style_hook]
 
+        # compute the content and style losses
         if content_features is not None:
             for c, d in zip(content_features,self.content_features):
                 mask = self.mask
 
+                # change the mask resolution if needed
                 if(self.mask.shape[2:4] != c.shape[2:4]):
                     mask = nn.Upsample(size=c.shape[2:4], mode='nearest')(self.mask)
 
@@ -102,6 +108,7 @@ class Net(nn.Module):
                 mask = self.mask
                 s = b
 
+                # change the mask resolution
                 if(self.mask.shape[2:4] != s.shape[2:4]):
                     mask = nn.Upsample(size=s.shape[2:4], mode='nearest')(self.mask)
 
@@ -223,15 +230,15 @@ def run_style_transfer(
 @click.option('--input')
 @click.option('--style_aligned')
 @click.option('--pass_', type=int, default=1)
-def entry(content, style, mask, dev, content_layers, \
+def entry(content, style, mask, dev, content_layers,  \
           style_layers, style_weight, content_weight, \
           learning_rate, n_iter, resolution, input, style_aligned, pass_):
 
-    main(content, style, mask, dev, content_layers, \
-             style_layers, style_weight, content_weight, \
-             learning_rate, n_iter, resolution, input, style_aligned, pass_)
+    main(content, style, mask, dev, content_layers,  \
+         style_layers, style_weight, content_weight, \
+         learning_rate, n_iter, resolution, input, style_aligned, pass_)
 
-def main(content, style, mask, dev, content_layers, \
+def main(content, style, mask, dev, content_layers,  \
          style_layers, style_weight, content_weight, \
          learning_rate, n_iter, resolution, input, style_aligned, pass_):
 
@@ -269,8 +276,9 @@ def main(content, style, mask, dev, content_layers, \
 
         Image.from_tensor(modified_input).save("modified_input.png")
 
-        output = run_style_transfer(content_img, style_img, input_img, first_pass_img, style_aligned_img, \
-            mask, content_weight=content_weight,     \
+        output = run_style_transfer(content_img, style_img, input_img, \
+            first_pass_img, style_aligned_img,                         \
+            mask, content_weight=content_weight,                       \
             content_layers=content_layers, style_layers=style_layers,  \
             phase=phase, style_weight=style_weight,                    \
             n_iter=n_iter, learning_rate=learning_rate, pass_=pass_)
